@@ -447,9 +447,15 @@ function fmtSpd(k) { return k != null && !Number.isNaN(k) ? Math.round(k) : "—
 function fmtHdg(d) { return d != null && !Number.isNaN(d) ? String(Math.round(d)).padStart(3, "0") + "°" : "—"; }
 
 async function fetchAircraft() {
+  const path = `/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}`;
+  const lol = `https://api.adsb.lol${path}`;
+  const fi  = `https://opendata.adsb.fi/api${path}`;
+  const viaProxy = (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`;
   const sources = [
-    { name: "adsb.lol",  url: `https://api.adsb.lol/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}` },
-    { name: "adsb.fi",   url: `https://opendata.adsb.fi/api/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}` },
+    { name: "adsb.lol",          url: lol },
+    { name: "adsb.fi",           url: fi },
+    { name: "adsb.lol (proxy)",  url: viaProxy(lol) },
+    { name: "adsb.fi (proxy)",   url: viaProxy(fi) },
   ];
   const failures = [];
   for (const src of sources) {
@@ -485,7 +491,7 @@ async function fetchAircraft() {
       const msg = (e && e.message) ? e.message : String(e);
       const hint =
         location.protocol === "file:" ? " (opened via file://)" :
-        /Failed to fetch|NetworkError|CORS/i.test(msg) ? " (blocked: CORS / network / extension)" : "";
+        /Failed to fetch|NetworkError|CORS|Load failed/i.test(msg) ? " (blocked: CORS / network / extension)" : "";
       failures.push(`${src.name}: ${msg}${hint}`);
       console.error(`[${src.name}]`, e);
     }
