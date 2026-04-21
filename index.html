@@ -342,6 +342,7 @@
     top: 55%; left: 50%;
     transform: translate(-50%, -50%);
     z-index: 400;
+    max-width: calc(100% - 40px);
     background: var(--panel);
     backdrop-filter: blur(16px);
     border: 1px solid var(--border);
@@ -353,6 +354,9 @@
     letter-spacing: 0.25em;
     text-transform: uppercase;
     color: var(--amber);
+    text-align: center;
+    line-height: 1.5;
+    word-break: break-word;
   }
 </style>
 
@@ -444,13 +448,17 @@ function fmtHdg(d) { return d != null && !Number.isNaN(d) ? String(Math.round(d)
 
 async function fetchAircraft() {
   const sources = [
-    `https://api.adsb.lol/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}`,
-    `https://opendata.adsb.fi/api/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}`,
+    { name: "adsb.lol",  url: `https://api.adsb.lol/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}` },
+    { name: "adsb.fi",   url: `https://opendata.adsb.fi/api/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}` },
   ];
-  for (const url of sources) {
+  const failures = [];
+  for (const src of sources) {
     try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
+      const res = await fetch(src.url, { cache: "no-store" });
+      if (!res.ok) {
+        failures.push(`${src.name}: HTTP ${res.status}`);
+        continue;
+      }
       const data = await res.json();
       const planes = (data.ac || [])
         .filter(a => a.lat != null && a.lon != null && a.alt_baro !== "ground")
@@ -473,12 +481,19 @@ async function fetchAircraft() {
       updateStatus();
       updateCard();
       return;
-    } catch (e) { /* try next */ }
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      const hint =
+        location.protocol === "file:" ? " (opened via file://)" :
+        /Failed to fetch|NetworkError|CORS/i.test(msg) ? " (blocked: CORS / network / extension)" : "";
+      failures.push(`${src.name}: ${msg}${hint}`);
+      console.error(`[${src.name}]`, e);
+    }
   }
-  state.error = "Signal lost";
+  state.error = failures.join(" · ") || "Signal lost";
   state.loading = false;
   updateStatus();
-  showOverlay("Signal lost · retrying");
+  showOverlay(`Signal lost<br><span style="font-size:9px;letter-spacing:.15em;opacity:.75;">${state.error}</span>`);
 }
 
 function updateMarkers() {
