@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0d0a06" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Steve's Air Traffic Control</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23E8B84A' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23E8B84A'/%3E%3C/svg%3E" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --amber: #E8B84A;
+    --amber-dim: #8a6d2a;
+    --amber-glow: rgba(232, 184, 74, 0.35);
+    --cream: #f0e6d2;
+    --bg: #0d0a06;
+    --panel: rgba(20, 15, 8, 0.92);
+    --border: rgba(232, 184, 74, 0.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: var(--bg);
+    color: var(--cream);
+    height: 100%; width: 100%;
+    overscroll-behavior: none;
+  }
+  body {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    -webkit-font-smoothing: antialiased;
+    position: fixed; inset: 0; overflow: hidden;
+  }
+
+  /* ───── HEADER ───── */
+  .header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: calc(env(safe-area-inset-top) + 16px) 20px 18px;
+    z-index: 1000;
+    background: linear-gradient(to bottom, rgba(13,10,6,0.95) 0%, rgba(13,10,6,0.75) 70%, transparent 100%);
+    text-align: center;
+    pointer-events: none;
+  }
+  .title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    font-style: italic;
+    font-size: 26px;
+    letter-spacing: 0.01em;
+    color: var(--amber);
+    line-height: 1.1;
+    text-shadow: 0 0 12px var(--amber-glow);
+  }
+  .subtitle {
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 10px;
+    letter-spacing: 0.35em;
+    color: var(--amber-dim);
+    text-transform: uppercase;
+  }
+  .rule {
+    margin: 8px auto 0;
+    width: 60px;
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--amber), transparent);
+    opacity: 0.6;
+  }
+
+  /* ───── MAP ───── */
+  #map {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+    z-index: 1;
+  }
+  .leaflet-tile-pane {
+    filter:
+      invert(1)
+      hue-rotate(180deg)
+      brightness(0.55)
+      contrast(1.1)
+      sepia(0.9)
+      saturate(0.7);
+  }
+  .leaflet-control-attribution {
+    background: rgba(13,10,6,0.8) !important;
+    color: rgba(232,184,74,0.5) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 9px !important;
+    padding: 2px 6px !important;
+  }
+  .leaflet-control-attribution a { color: var(--amber) !important; }
+  .leaflet-container { background: var(--bg) !important; }
+  .leaflet-control-zoom a {
+    background: var(--panel) !important;
+    color: var(--amber) !important;
+    border: 1px solid var(--border) !important;
+    font-weight: 500 !important;
+  }
+  .leaflet-control-zoom a:hover { background: rgba(232,184,74,0.15) !important; }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 3px
+    );
+    pointer-events: none;
+    z-index: 2000;
+    mix-blend-mode: multiply;
+  }
+
+  /* ───── STATUS BAR ───── */
+  .status-bar {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 100px);
+    left: 16px;
+    right: 16px;
+    z-index: 500;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--cream);
+  }
+  .status-left { display: flex; align-items: center; gap: 10px; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber-glow);
+  }
+  .dot.offline { background: #c4524a; box-shadow: 0 0 6px rgba(196,82,74,0.5); }
+  .dot.loading { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .count {
+    color: var(--amber);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+
+  /* ───── PLANES ───── */
+  .plane-icon { display: flex; align-items: center; justify-content: center; position: relative; }
+  .plane-icon svg {
+    overflow: visible;
+    filter: drop-shadow(0 0 2px rgba(0,0,0,0.9));
+  }
+  .plane-icon .plane-body {
+    fill: var(--cream);
+    stroke: rgba(0,0,0,0.7);
+    stroke-width: 0.6;
+    transition: fill 0.15s;
+  }
+  .plane-icon.selected .plane-body {
+    fill: var(--amber);
+    filter: drop-shadow(0 0 4px var(--amber-glow));
+  }
+  .pulse-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid var(--amber);
+    animation: pulseRing 2s ease-out infinite;
+    pointer-events: none;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+  }
+  @keyframes pulseRing {
+    0% { width: 14px; height: 14px; opacity: 0.8; }
+    100% { width: 48px; height: 48px; opacity: 0; }
+  }
+
+  /* ───── HOME MARKER ───── */
+  .home-marker { display: flex; align-items: center; justify-content: center; position: relative; }
+  .home-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 8px var(--amber-glow), 0 0 2px rgba(0,0,0,0.9);
+    border: 1.5px solid var(--bg);
+  }
+  .home-label {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.25em;
+    color: var(--amber);
+    text-transform: uppercase;
+    text-shadow: 0 0 4px var(--bg), 0 0 4px var(--bg);
+    pointer-events: none;
+  }
+
+  /* ───── BOTTOM CARD ───── */
+  .card-slot {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 0 14px calc(env(safe-area-inset-bottom) + 14px);
+    z-index: 500;
+    pointer-events: none;
+  }
+  .card {
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.7), 0 0 0 1px rgba(232,184,74,0.08);
+    pointer-events: auto;
+    transform: translateY(16px);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.22,1,0.36,1), opacity 0.25s;
+    position: relative;
+  }
+  .card.visible { transform: translateY(0); opacity: 1; }
+  .card::before, .card::after {
+    content: '';
+    position: absolute;
+    width: 10px; height: 10px;
+    border: 1px solid var(--amber);
+    opacity: 0.5;
+  }
+  .card::before { top: 6px; left: 6px; border-right: none; border-bottom: none; }
+  .card::after { bottom: 6px; right: 6px; border-left: none; border-top: none; }
+
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(232,184,74,0.2);
+  }
+  .callsign {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    text-shadow: 0 0 8px var(--amber-glow);
+    line-height: 1;
+  }
+  .type {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--amber-dim);
+    font-weight: 500;
+    text-transform: uppercase;
+    text-align: right;
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .metric-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    font-weight: 500;
+    margin-bottom: 5px;
+  }
+  .metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: var(--cream);
+    line-height: 1;
+  }
+  .metric-unit {
+    font-size: 10px;
+    color: var(--amber-dim);
+    font-weight: 500;
+    margin-left: 3px;
+    letter-spacing: 0.1em;
+  }
+  .card-foot {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(232,184,74,0.2);
+    display: flex;
+    justify-content: space-between;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(240,230,210,0.7);
+    letter-spacing: 0.15em;
+  }
+
+  .hint {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--amber-dim);
+    padding: 14px 20px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+
+  .overlay-msg {
+    position: absolute;
+    top: 55%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 400;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--amber);
+  }
+</style>
+
+</head>
+<body>
+
+<div class="header">
+  <div class="title">Steve's Air Traffic Control</div>
+  <div class="subtitle">Chelmsford · Middlesex County</div>
+  <div class="rule"></div>
+</div>
+
+<div id="map"></div>
+
+<div class="status-bar">
+  <div class="status-left">
+    <span id="dot" class="dot loading"></span>
+    <span id="statusText">Scanning</span>
+  </div>
+  <div><span id="count" class="count">0</span> <span style="opacity:0.55;">Aircraft</span></div>
+</div>
+
+<div id="overlayMsg"></div>
+
+<div class="card-slot" id="cardSlot">
+  <div class="hint">Tap an aircraft</div>
+</div>
+
+<script>
+const HOME = { lat: 42.5998, lon: -71.3673, label: "Chelmsford" };
+const DEFAULT_ZOOM = 9;
+const FETCH_RADIUS = 100;
+const REFRESH_MS = 10000;
+
+const state = {
+  aircraft: [],
+  selectedHex: null,
+  loading: true,
+  error: null,
+  markers: new Map(),
+  markerMeta: new Map(),
+  lastRenderedHex: null,
+};
+
+const map = L.map('map', {
+  center: [HOME.lat, HOME.lon],
+  zoom: DEFAULT_ZOOM,
+  zoomControl: false,
+  attributionControl: true,
+  preferCanvas: true,
+});
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18,
+  attribution: '© OpenStreetMap · ADSB.lol'
+}).addTo(map);
+
+const homeIcon = L.divIcon({
+  className: 'home-marker',
+  html: '<div class="home-dot"></div><div class="home-label">Chelmsford</div>',
+  iconSize: [10, 10],
+  iconAnchor: [5, 5],
+});
+L.marker([HOME.lat, HOME.lon], { icon: homeIcon, interactive: false, zIndexOffset: -500 }).addTo(map);
+
+function planeIcon(heading, selected) {
+  const cls = 'plane-icon' + (selected ? ' selected' : '');
+  const pulseRing = selected ? '<div class="pulse-ring"></div>' : '';
+  const svg = `
+    <svg width="24" height="24" viewBox="-12 -12 24 24" style="transform: rotate(${heading || 0}deg);">
+      <path class="plane-body" d="M 0,-9 L 1.4,-2.6 L 10.5,1.4 L 10.5,2.8 L 1.4,1.4 L 1.4,5.6 L 4.2,7 L 4.2,8.4 L 0,7 L -4.2,8.4 L -4.2,7 L -1.4,5.6 L -1.4,1.4 L -10.5,2.8 L -10.5,1.4 L -1.4,-2.6 Z" />
+    </svg>
+  `;
+  return L.divIcon({
+    className: cls,
+    html: pulseRing + svg,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+function fmtAlt(ft) {
+  if (ft == null || ft === "ground" || Number.isNaN(ft)) return "—";
+  return (Math.round(ft / 100) * 100).toLocaleString();
+}
+function fmtSpd(k) { return k != null && !Number.isNaN(k) ? Math.round(k) : "—"; }
+function fmtHdg(d) { return d != null && !Number.isNaN(d) ? String(Math.round(d)).padStart(3, "0") + "°" : "—"; }
+
+async function fetchAircraft() {
+  const sources = [
+    `https://api.adsb.lol/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}`,
+    `https://opendata.adsb.fi/api/v2/lat/${HOME.lat}/lon/${HOME.lon}/dist/${FETCH_RADIUS}`,
+  ];
+  for (const url of sources) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const planes = (data.ac || [])
+        .filter(a => a.lat != null && a.lon != null && a.alt_baro !== "ground")
+        .map(a => ({
+          hex: a.hex,
+          callsign: (a.flight || "").trim(),
+          lat: a.lat, lon: a.lon,
+          alt: typeof a.alt_baro === "number" ? a.alt_baro : 0,
+          speed: a.gs,
+          heading: a.track ?? a.true_heading ?? 0,
+          type: a.t,
+          registration: a.r,
+          squawk: a.squawk,
+        }));
+      state.aircraft = planes;
+      state.loading = false;
+      state.error = null;
+      showOverlay("");
+      updateMarkers();
+      updateStatus();
+      updateCard();
+      return;
+    } catch (e) { /* try next */ }
+  }
+  state.error = "Signal lost";
+  state.loading = false;
+  updateStatus();
+  showOverlay("Signal lost · retrying");
+}
+
+function updateMarkers() {
+  const seen = new Set();
+  for (const a of state.aircraft) {
+    seen.add(a.hex);
+    const isSelected = state.selectedHex === a.hex;
+    const meta = state.markerMeta.get(a.hex);
+    const headingChanged = !meta || Math.abs((meta.heading || 0) - (a.heading || 0)) > 1.5;
+    const selectionChanged = !meta || meta.selected !== isSelected;
+    const needsIcon = headingChanged || selectionChanged;
+
+    let marker = state.markers.get(a.hex);
+    if (!marker) {
+      marker = L.marker([a.lat, a.lon], {
+        icon: planeIcon(a.heading, isSelected),
+        riseOnHover: true,
+        keyboard: false,
+      });
+      marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (state.selectedHex !== a.hex) {
+          state.selectedHex = a.hex;
+          if (navigator.vibrate) navigator.vibrate(8);
+          updateMarkers();
+          updateCard();
+        }
+      });
+      marker.addTo(map);
+      state.markers.set(a.hex, marker);
+    } else {
+      marker.setLatLng([a.lat, a.lon]);
+      if (needsIcon) marker.setIcon(planeIcon(a.heading, isSelected));
+    }
+    state.markerMeta.set(a.hex, { heading: a.heading, selected: isSelected });
+  }
+  for (const [hex, marker] of state.markers) {
+    if (!seen.has(hex)) {
+      map.removeLayer(marker);
+      state.markers.delete(hex);
+      state.markerMeta.delete(hex);
+      if (state.selectedHex === hex) {
+        state.selectedHex = null;
+        updateCard();
+      }
+    }
+  }
+}
+
+function updateStatus() {
+  const dot = document.getElementById('dot');
+  dot.className = 'dot' + (state.error ? ' offline' : '') + (state.loading ? ' loading' : '');
+  document.getElementById('statusText').textContent =
+    state.error ? 'Offline' : (state.loading ? 'Scanning' : 'Live');
+  document.getElementById('count').textContent = state.aircraft.length;
+}
+
+function showOverlay(msg) {
+  const el = document.getElementById('overlayMsg');
+  el.innerHTML = msg ? `<div class="overlay-msg">${msg}</div>` : '';
+}
+
+function buildCardHTML(s) {
+  const title = s.callsign || s.registration || (s.hex ? s.hex.toUpperCase() : "—");
+  return `
+    <div class="card">
+      <div class="card-head">
+        <div class="callsign">${title}</div>
+        ${s.type ? `<div class="type">${s.type}</div>` : ""}
+      </div>
+      <div class="metrics">
+        <div>
+          <div class="metric-label">Altitude</div>
+          <div><span class="metric-value" data-field="alt">${fmtAlt(s.alt)}</span><span class="metric-unit">ft</span></div>
+        </div>
+        <div>
+          <div class="metric-label">Speed</div>
+          <div><span class="metric-value" data-field="spd">${fmtSpd(s.speed)}</span><span class="metric-unit">kts</span></div>
+        </div>
+        <div>
+          <div class="metric-label">Heading</div>
+          <div><span class="metric-value" data-field="hdg">${fmtHdg(s.heading)}</span></div>
+        </div>
+      </div>
+      ${(s.registration || s.squawk) ? `
+        <div class="card-foot">
+          <span data-field="reg">${s.registration || "—"}</span>
+          <span>SQ <span data-field="sq">${s.squawk || "----"}</span></span>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function updateCard() {
+  const slot = document.getElementById('cardSlot');
+  const s = state.aircraft.find(a => a.hex === state.selectedHex);
+
+  if (!s) {
+    if (state.lastRenderedHex !== null) {
+      slot.innerHTML = '<div class="hint">Tap an aircraft</div>';
+      state.lastRenderedHex = null;
+    }
+    return;
+  }
+
+  if (state.lastRenderedHex === s.hex) {
+    const card = slot.querySelector('.card');
+    if (card) {
+      const setField = (name, val) => {
+        const el = card.querySelector(`[data-field="${name}"]`);
+        if (el && el.textContent !== val) el.textContent = val;
+      };
+      setField('alt', fmtAlt(s.alt));
+      setField('spd', fmtSpd(s.speed));
+      setField('hdg', fmtHdg(s.heading));
+      setField('reg', s.registration || "—");
+      setField('sq', s.squawk || "----");
+      return;
+    }
+  }
+
+  slot.innerHTML = buildCardHTML(s);
+  state.lastRenderedHex = s.hex;
+  requestAnimationFrame(() => {
+    const card = slot.querySelector('.card');
+    if (card) card.classList.add('visible');
+  });
+}
+
+map.on('click', () => {
+  if (state.selectedHex) {
+    state.selectedHex = null;
+    updateMarkers();
+    updateCard();
+  }
+});
+
+fetchAircraft();
+setInterval(fetchAircraft, REFRESH_MS);
+</script>
+
+</body>
+</html>
